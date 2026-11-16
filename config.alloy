@@ -1,0 +1,42 @@
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  refresh_interval = "5s"
+}
+
+discovery.relabel "waf_only" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/modsecurity-waf"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "waf_logs" {
+  host = "unix:///var/run/docker.sock"
+
+  targets = discovery.docker.containers.targets
+
+  labels = {
+    job = "waf",
+  }
+
+  relabel_rules = discovery.relabel.waf_only.rules
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

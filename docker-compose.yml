@@ -1,0 +1,82 @@
+
+services:
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: juice-shop
+    networks:
+      - waf-network
+
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    container_name: modsecurity-waf
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      BACKEND: "http://juice-shop:3000"
+      PORT: "8080"
+      MODSEC_RULE_ENGINE: "On"
+      BLOCKING_PARANOIA: "1"
+      MODSEC_AUDIT_ENGINE: "RelevantOnly"
+      MODSEC_AUDIT_LOG: "/dev/stdout"
+      MODSEC_AUDIT_LOG_FORMAT: "JSON"
+    depends_on:
+      - juice-shop
+    networks:
+      - waf-network
+
+  loki:
+    image: grafana/loki:3.7.0
+    container_name: loki
+    user: "0"
+    ports:
+      - "127.0.0.1:3100:3100"
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - waf-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - waf-network
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    ports:
+      - "127.0.0.1:12345:12345"
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    networks:
+      - waf-network
+
+networks:
+  waf-network:
+    driver: bridge
+
+volumes:
+  loki-data:
+  grafana-data:
+  alloy-data:
